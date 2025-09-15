@@ -3,16 +3,17 @@ import pygame
 from .constants import *
 from .camera import Camera
 from numpy import float32 as fl
+from numpy import format_float_positional
 from .utils import *
 
 class Player:
-    def __init__(self, x: fl, y: fl, z: fl, f: fl):
-        self.x = fl(x)
-        self.y = fl(y)
-        self.z = fl(z)
-        self.vx = fl(0.0)
-        self.vy = fl(0.0)
-        self.vz = fl(0.0)
+    def __init__(self, x: float, y: float, z: float, f: fl):
+        self.x = float(x)
+        self.y = float(y)
+        self.z = float(z)
+        self.vx = 0.0
+        self.vy = 0.0
+        self.vz = 0.0
         self.facing = fl(f)
         self.forward = fl(0.0)
         self.strafe = fl(0.0)
@@ -38,7 +39,6 @@ class Player:
         pygame.draw.rect(surface, CHARACTER_COLOR, 
                             (screen_x - size//2, screen_z - size//2, size, size))
 
-        # -90 to make 0 be UP
         angle_rad = math.radians(self.facing + 90)
         end_x = screen_x + math.cos(angle_rad) * FACING_LINE_LENGTH
         end_y = screen_z + math.sin(angle_rad) * FACING_LINE_LENGTH
@@ -50,7 +50,7 @@ class Player:
 
     def tick(self):
         if self.airborne:
-            slip = fl(1)
+            slip = 1.0
         else:
             slip = self.ground_slip
 
@@ -62,8 +62,8 @@ class Player:
         self.z += self.vz
 
         # Finalizing momentum
-        self.vx *= fl(0.91) * self.prev_slip
-        self.vz *= fl(0.91) * self.prev_slip
+        self.vx *= float(fl(0.91) * self.prev_slip)
+        self.vz *= float(fl(0.91) * self.prev_slip)
 
         # Applying inertia threshold
         if abs(self.vx) < self.inertia_threshold:
@@ -145,13 +145,13 @@ class Player:
         out_facing = self.facing % 180
 
         return [
-            "X: {:.{}f}".format(self.x, INFO_PANEL_PRECISION),
-            "Y: {:.{}f}".format(self.y, INFO_PANEL_PRECISION),
-            "Z: {:.{}f}".format(self.z, INFO_PANEL_PRECISION),
-            "F: {:.{}f}".format(out_facing, INFO_PANEL_PRECISION),
-            "VX: {:.{}f}".format(self.vx, INFO_PANEL_PRECISION),
-            "VY: {:.{}f}".format(self.vy, INFO_PANEL_PRECISION),
-            "VZ: {:.{}f}".format(self.vz, INFO_PANEL_PRECISION),
+            f"X: {self.x:.{INFO_PANEL_PRECISION}f}",
+            f"Y: {self.y:.{INFO_PANEL_PRECISION}f}", 
+            f"Z: {self.z:.{INFO_PANEL_PRECISION}f}",
+            f"F: {out_facing:.{INFO_PANEL_PRECISION}f}",
+            f"VX: {self.vx:.{INFO_PANEL_PRECISION}f}",
+            f"VY: {self.vy:.{INFO_PANEL_PRECISION}f}",
+            f"VZ: {self.vz:.{INFO_PANEL_PRECISION}f}",
             f"Airborne: {self.airborne}"
         ]
             

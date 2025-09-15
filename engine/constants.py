@@ -1,16 +1,18 @@
+from numpy import float32 as fl
+
 # Game constants
 SCREEN_WIDTH = 1000
 SCREEN_HEIGHT = 600
-FPS = 20
+FPS = 2000
 BLOCK_SIZE = 50
 FONT = 'Minecraft Regular'
 INFO_PANEL_WIDTH = 220
-INFO_PANEL_PRECISION = 10
-PAUSE = True
+INFO_PANEL_PRECISION = 5
+PAUSE = False
 
 # Debug
 DRAW_BLOCK_COORDINATES = True
-DRAW_GRID = True
+DRAW_GRID = False
 
 # Colors
 BACKGROUND_COLOR = (30, 30, 40)

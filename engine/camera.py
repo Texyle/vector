@@ -1,17 +1,64 @@
 from .constants import *
 from numpy import float32 as fl
+import math
 
 class Camera:
-    def __init__(self, x: fl, z: fl):
-        self.x = fl(x)
-        self.z = fl(z)
+    def __init__(self, x: float, z: float, rotation: float):
+        self.x = x
+        self.z = z
+        self.rotation = rotation
+        
+    def rotate(self, angle: float):
+        self.rotation += angle
     
-    def world_to_screen(self, world_x: fl, world_z: fl) -> tuple[int, int]:
-        screen_x = int((world_x - self.x) * BLOCK_SIZE + SCREEN_WIDTH // 2)
-        screen_z = int((world_z - self.z) * BLOCK_SIZE + SCREEN_HEIGHT // 2)
-        return screen_x, screen_z
+    def set_rotation(self, angle):
+        self.rotation = angle
+        
+    def get_forward_vector(self):
+        return math.sin(self.rotation), math.cos(self.rotation)
+    
+    def get_right_vector(self):
+        return math.cos(self.rotation), -math.sin(self.rotation)
+    
+    def move_forward(self, amount):
+        dx, dz = self.get_forward_vector()
+        self.x += dx * amount
+        self.z += dz * amount
+    
+    def move_right(self, amount):
+        dx, dz = self.get_right_vector()
+        self.x += dx * amount
+        self.z += dz * amount
+    
+    def world_to_screen(self, world_x, world_z):
+        rel_x = world_x - self.x
+        rel_z = world_z - self.z
+        
+        if self.rotation != 0:
+            cos_angle = math.cos(self.rotation)
+            sin_angle = math.sin(self.rotation)
+            rotated_x = rel_x * cos_angle - rel_z * sin_angle
+            rotated_z = rel_x * sin_angle + rel_z * cos_angle
+        else:
+            rotated_x = rel_x
+            rotated_z = rel_z
+        
+        screen_x = SCREEN_WIDTH // 2 + int(rotated_x * BLOCK_SIZE)
+        screen_y = SCREEN_HEIGHT // 2 + int(rotated_z * BLOCK_SIZE)
+        
+        return screen_x, screen_y
 
-    def screen_to_world(self, screen_x: int, screen_z: int) -> tuple[fl, fl]:
-        world_x = fl((screen_x - SCREEN_WIDTH // 2) / BLOCK_SIZE + self.x)
-        world_z = fl((screen_z - SCREEN_HEIGHT // 2) / BLOCK_SIZE + self.z)
-        return world_x, world_z
+    def screen_to_world(self, screen_x, screen_y):
+        rel_x = (screen_x - SCREEN_WIDTH // 2) / BLOCK_SIZE
+        rel_z = (screen_y - SCREEN_HEIGHT // 2) / BLOCK_SIZE
+        
+        if self.rotation != 0:
+            cos_angle = math.cos(-self.rotation)
+            sin_angle = math.sin(-self.rotation)
+            world_x = rel_x * cos_angle - rel_z * sin_angle
+            world_z = rel_x * sin_angle + rel_z * cos_angle
+        else:
+            world_x = rel_x
+            world_z = rel_z
+        
+        return world_x + self.x, world_z + self.z
