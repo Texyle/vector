@@ -7,55 +7,57 @@ from numpy import float32 as fl
 import time
 import math
 
-class Engine:
+class Engine:    
     def __init__(self):
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
         self.clock = pygame.time.Clock()
         self.running = True
-        self.player = Player(1, 20, 1, 0)
-        self.camera = Camera(0, 0, math.radians(90))
+        self.player = Player(4.01, 20, 3, 0)
+        self.camera = Camera(0, 0, math.radians(180))
         self.level = Level()
         self.font = pygame.font.SysFont(FONT, 16)
         self.fps = 0
         self.fps_samples = []
         self.max_samples = 10
     
-    def handle_events(self):
+    def handle_events(self, dt: float):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_RETURN:
                     self.tick()
-                    self.draw()
+                    self.draw(1)
 
-    def handle_input(self):
+    def handle_input(self, dt: float):
         keys = pygame.key.get_pressed()
-        
-        # Camera movement controls
-        camera_speed = 0.2
-        camera_rotation_speed = 0.05
 
         if keys[pygame.K_RIGHT]:
-            self.camera.move_right(camera_speed)
+            self.camera.move_right(1, dt)
         if keys[pygame.K_LEFT]:
-            self.camera.move_right(-camera_speed)
+            self.camera.move_right(-1, dt)
         if keys[pygame.K_DOWN]:
-            self.camera.move_forward(camera_speed)
+            self.camera.move_forward(1, dt)
         if keys[pygame.K_UP]:
-            self.camera.move_forward(-camera_speed)
+            self.camera.move_forward(-1, dt)
         if keys[pygame.K_PERIOD]:
-            self.camera.rotate(camera_rotation_speed)
+            self.camera.rotate(1, dt)
         if keys[pygame.K_COMMA]:
-            self.camera.rotate(-camera_rotation_speed)
+            self.camera.rotate(-1, dt)
 
         # Player movement controls
+        if keys[pygame.K_LCTRL]:
+            self.player.set_sprint(True)
+        else:
+            self.player.set_sprint(False)
+        if keys[pygame.K_SPACE]:
+            self.player.jump()
         self.player.set_movement(keys[pygame.K_w], keys[pygame.K_a], keys[pygame.K_s], keys[pygame.K_d])
 
     def tick(self):
-        self.player.tick()
+        self.player.tick(self.level)
     
-    def draw(self):
+    def draw(self, dt: float):
         self.screen.fill(BACKGROUND_COLOR)
 
         self.level.draw(self.screen, self.camera)
@@ -77,31 +79,40 @@ class Engine:
         for i, line in enumerate(info_lines):
             text_surface = self.font.render(line, True, TEXT_COLOR)
             self.screen.blit(text_surface, (panel_x + padding, panel_y + padding + i * line_height))
-
+            
     def run(self):
-        last_time = time.time()
         frame_count = 0
-        fps_update_interval = 0.5  # Update FPS every 0.5 seconds
+        fps_update_interval = 0.5
         fps_timer = 0
+        
+        tick_interval = 1.0 / TICK_RATE
+        accumulator = 0.0
+        previous_time = time.time()
         
         while self.running:
             current_time = time.time()
-            dt = current_time - last_time
-            last_time = current_time
+            dt = current_time - previous_time
+            previous_time = current_time
+            
+            if dt > 0.25:
+                dt = 0.25
+                
+            accumulator += dt
+            
+            self.handle_events(dt)
+            self.handle_input(dt)
+            
+            while accumulator >= tick_interval:
+                if not PAUSE:
+                    self.tick()
+                accumulator -= tick_interval
+            
+            self.draw(dt)
+            
             frame_count += 1
             fps_timer += dt
-            
-            # Update FPS at regular intervals to reduce flickering
             if fps_timer >= fps_update_interval:
                 self.fps = int(frame_count / fps_timer)
                 frame_count = 0
                 fps_timer = 0
             
-            self.handle_events()
-            self.handle_input()
-
-            if not PAUSE:
-                self.tick()
-            
-            self.draw()
-            #self.clock.tick(FPS)

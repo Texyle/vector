@@ -8,8 +8,8 @@ class Camera:
         self.z = z
         self.rotation = rotation
         
-    def rotate(self, angle: float):
-        self.rotation += angle
+    def rotate(self, direction: int, dt: float):
+        self.rotation += CAMERA_ROTATION_SPEED * direction * dt
     
     def set_rotation(self, angle):
         self.rotation = angle
@@ -20,15 +20,15 @@ class Camera:
     def get_right_vector(self):
         return math.cos(self.rotation), -math.sin(self.rotation)
     
-    def move_forward(self, amount):
+    def move_forward(self, direction: int, dt: float):
         dx, dz = self.get_forward_vector()
-        self.x += dx * amount
-        self.z += dz * amount
+        self.x += dx * CAMERA_MOVEMENT_SPEED * direction * dt
+        self.z += dz * CAMERA_MOVEMENT_SPEED * direction * dt
     
-    def move_right(self, amount):
+    def move_right(self, direction: int, dt: float):
         dx, dz = self.get_right_vector()
-        self.x += dx * amount
-        self.z += dz * amount
+        self.x += dx * CAMERA_MOVEMENT_SPEED * direction * dt
+        self.z += dz * CAMERA_MOVEMENT_SPEED * direction * dt
     
     def world_to_screen(self, world_x, world_z):
         rel_x = world_x - self.x

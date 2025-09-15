@@ -3,8 +3,10 @@ import pygame
 from .constants import *
 from .camera import Camera
 from numpy import float32 as fl
-from numpy import format_float_positional
 from .utils import *
+from .bounding_box import BoundingBox
+from .blocks.block import Block
+from .level import Level
 
 class Player:
     def __init__(self, x: float, y: float, z: float, f: fl):
@@ -33,22 +35,28 @@ class Player:
     
     def draw(self, surface: pygame.Surface, camera: Camera):
         screen_x, screen_z = camera.world_to_screen(fl(self.x), fl(self.z))
-
         size = BLOCK_SIZE * PLAYER_SIZE
+    
+        total_rotation_degrees = math.degrees(camera.rotation)
         
-        pygame.draw.rect(surface, CHARACTER_COLOR, 
-                            (screen_x - size//2, screen_z - size//2, size, size))
-
-        angle_rad = math.radians(self.facing + 90)
+        player_surface = pygame.Surface((size, size), pygame.SRCALPHA)
+        pygame.draw.rect(player_surface, CHARACTER_COLOR, (0, 0, size, size))
+        
+        rotated_surface = pygame.transform.rotate(player_surface, -total_rotation_degrees)
+        
+        rotated_rect = rotated_surface.get_rect(center=(screen_x, screen_z))
+        
+        surface.blit(rotated_surface, rotated_rect.topleft)
+        
+        angle_rad = math.radians(self.facing + 90 + math.degrees(camera.rotation))
         end_x = screen_x + math.cos(angle_rad) * FACING_LINE_LENGTH
         end_y = screen_z + math.sin(angle_rad) * FACING_LINE_LENGTH
         pygame.draw.line(surface, FACING_LINE_COLOR, (screen_x, screen_z), (end_x, end_y), 3)
-        
-        # Draw height indicator
-        # height_indicator = 5 + int(self.y / 10)
-        # pygame.draw.circle(surface, CHARACTER_COLOR, (screen_x, screen_z), height_indicator, 2)
 
-    def tick(self):
+    def tick(self, level):
+        self.move(level)
+        
+    def move(self, level):
         if self.airborne:
             slip = 1.0
         else:
@@ -58,18 +66,52 @@ class Player:
             self.prev_slip = slip
 
         # Moving the player
-        self.x += self.vx
-        self.z += self.vz
+        self.y += self.vy
+        
+        # X collision detection
+        next_position = self.get_bounding_box()
+        next_position.move(x = self.vx)
+        block = level.check_collision(next_position)
+        if block is not None:
+            if self.vx > 0:
+                self.x = block.get_bounding_box().min_x - PLAYER_SIZE / 2 - COLLISION_HITBOX_GROWTH
+            elif self.vx < 0:
+                self.x = block.get_bounding_box().max_x + PLAYER_SIZE / 2 + COLLISION_HITBOX_GROWTH
+                
+            self.vx = 0
+        else:
+            self.x += self.vx
+            
+        # Z collision detection
+        next_position = self.get_bounding_box()
+        next_position.move(z = self.vz)
+        block = level.check_collision(next_position)
+        if block is not None:
+            if self.vz > 0:
+                self.z = block.get_bounding_box().min_z - PLAYER_SIZE / 2 - COLLISION_HITBOX_GROWTH
+            elif self.vz < 0:
+                self.z = block.get_bounding_box().max_z + PLAYER_SIZE / 2 + COLLISION_HITBOX_GROWTH
+                
+            self.vz = 0
+        else:
+            self.z += self.vz
 
         # Finalizing momentum
         self.vx *= float(fl(0.91) * self.prev_slip)
         self.vz *= float(fl(0.91) * self.prev_slip)
+        
+        # if self.jumping:
+        #     self.vy = 0.42
+        # else:
+        #     self.vy = (self.vy - 0.08) * 0.98
 
         # Applying inertia threshold
         if abs(self.vx) < self.inertia_threshold:
             self.vx = 0.0
         if abs(self.vz) < self.inertia_threshold:
             self.vz = 0.0
+        if abs(self.vy) < self.inertia_threshold:
+            self.vy = 0.0
 
         # Calculating movement multiplier
         if self.airborne:
@@ -79,6 +121,9 @@ class Player:
                 movement = fl(movement + movement * 0.3)
         else:
             movement = fl(0.1)
+            
+            if self.sprinting:
+                movement = fl(movement * (1.0 + fl(0.3)))
             drag = fl(0.91) * slip
             movement *= fl(0.16277136) / (drag * drag * drag)
 
@@ -121,25 +166,28 @@ class Player:
 
         self.prev_sprint = self.sprinting
         self.prev_slip = slip
-
-    def set_movement(self, w: bool, a: bool, s: bool, d: bool):
-        if w and s:
-            self.forward = fl(0.0)
-        elif w:
-            self.forward = fl(1.0)
-        elif s:
-            self.forward = fl(-1.0)
-        else:
-            self.forward = fl(0.0)
-
-        if a and d:
-            self.strafe = fl(0.0)
-        elif a:
-            self.strafe = fl(1.0)
-        elif d:
-            self.strafe = fl(-1.0)
-        else:
-            self.strafe = fl(0.0)
+        
+    # Collision detection
+    def check_horizontal_collision(self, level: Level):
+        # X
+        block = level.check_collision(self.get_bounding_box().increase(0.0000000119209292))
+        if block is not None:
+            if self.vx > 0:
+                self.x = block.get_bounding_box().min_x - PLAYER_SIZE / 2
+            elif self.vx < 0:
+                self.x = block.get_bounding_box().max_x + PLAYER_SIZE / 2
+                
+            self.vx = 0
+        
+        # Z
+        block = level.check_collision(self.get_bounding_box().increase(0.0000000119209292))
+        if block is not None:
+            if self.vz > 0:
+                self.z = block.get_bounding_box().min_z - PLAYER_SIZE / 2
+            elif self.vz < 0:
+                self.z = block.get_bounding_box().max_z + PLAYER_SIZE / 2
+                
+            self.vz = 0
 
     def get_info_text(self):
         out_facing = self.facing % 180
@@ -154,4 +202,37 @@ class Player:
             f"VZ: {self.vz:.{INFO_PANEL_PRECISION}f}",
             f"Airborne: {self.airborne}"
         ]
+        
+    def get_bounding_box(self) -> BoundingBox:
+        return BoundingBox(self.x - PLAYER_SIZE / 2, self.x + PLAYER_SIZE / 2,
+                           self.y, self.y + PLAYER_HEIGHT,
+                           self.z - PLAYER_SIZE / 2, self.z + PLAYER_SIZE / 2)
+        
+    def set_movement(self, w: bool, a: bool, s: bool, d: bool):
+        if w and s:
+            self.forward = fl(0.0)
+            self.sprinting = False
+        elif w:
+            self.forward = fl(1.0)
+        elif s:
+            self.forward = fl(-1.0)
+            self.sprinting = False
+        else:
+            self.forward = fl(0.0)
+            self.sprinting = False
+
+        if a and d:
+            self.strafe = fl(0.0)
+        elif a:
+            self.strafe = fl(1.0)
+        elif d:
+            self.strafe = fl(-1.0)
+        else:
+            self.strafe = fl(0.0)
+            
+    def set_sprint(self, sprint: bool):
+        self.sprinting = sprint
+        
+    def jump(self):
+        self.jumping = True
             
