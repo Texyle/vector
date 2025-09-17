@@ -14,6 +14,10 @@ class Camera:
     def set_rotation(self, angle):
         self.rotation = angle
         
+    def set_position(self, x: float, z: float):
+        self.x = x
+        self.z = z
+        
     def get_forward_vector(self):
         return math.sin(self.rotation), math.cos(self.rotation)
     

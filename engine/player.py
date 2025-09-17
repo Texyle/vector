@@ -9,6 +9,11 @@ from .blocks.block import Block
 from .level import Level
 
 class Player:
+    start_x = 0.5
+    start_y = 11
+    start_z = -0.299999
+    start_f = 0
+    
     def __init__(self, x: float, y: float, z: float, f: fl):
         self.x = float(x)
         self.y = float(y)
@@ -19,7 +24,7 @@ class Player:
         self.facing = fl(f)
         self.forward = fl(0.0)
         self.strafe = fl(0.0)
-        self.airborne = False
+        self.airborne = True
         self.sprinting = False
         self.sneaking = False
         self.jumping = False
@@ -32,6 +37,7 @@ class Player:
         self.prev_sprint = False
         self.air_sprint_delay = True
         self.inertia_threshold = 0.005
+        self.jump_angle = 0
     
     def draw(self, surface: pygame.Surface, camera: Camera):
         screen_x, screen_z = camera.world_to_screen(fl(self.x), fl(self.z))
@@ -40,7 +46,11 @@ class Player:
         total_rotation_degrees = math.degrees(camera.rotation)
         
         player_surface = pygame.Surface((size, size), pygame.SRCALPHA)
-        pygame.draw.rect(player_surface, CHARACTER_COLOR, (0, 0, size, size))
+        
+        if self.airborne:
+            pygame.draw.rect(player_surface, PLAYER_AIRBORNE_COLOR, (0, 0, size, size))
+        else:
+            pygame.draw.rect(player_surface, PLAYER_GROUNDED_COLOR, (0, 0, size, size))
         
         rotated_surface = pygame.transform.rotate(player_surface, -total_rotation_degrees)
         
@@ -53,30 +63,48 @@ class Player:
         end_y = screen_z + math.sin(angle_rad) * FACING_LINE_LENGTH
         pygame.draw.line(surface, FACING_LINE_COLOR, (screen_x, screen_z), (end_x, end_y), 3)
 
-    def tick(self, level):
+    def tick(self, level: Level, camera: Camera):
+        if LOOK_AT_CURSOR:
+            self.look_at_cursor(camera)
+            
         self.move(level)
         
+        if self.y > 11.01 and self.y < 11.2 and self.z > 6.0 and self.z < 6.4:
+            print(f"MM: {(6.3-self.z)}")
+            
+        
+        if self.y > 6.01 and self.y < 6.7:
+            print(f"Landing: {-1 * (12.7-self.z)}")
+        
+        
     def move(self, level):
-        if self.airborne:
-            slip = 1.0
+        airborne = self.airborne
+
+        # Y collision detection
+        next_position = self.get_bounding_box()
+        next_position.move(y = self.vy)
+        bbox = level.check_collision(next_position)
+        if bbox is not None:
+            if self.vy > 0:
+                self.y = bbox.min_y - PLAYER_SIZE / 2
+            elif self.vy < 0:
+                self.y = bbox.max_y
+                airborne = False
+                
+            self.vy = 0
         else:
-            slip = self.ground_slip
-
-        if self.prev_slip is None:
-            self.prev_slip = slip
-
-        # Moving the player
-        self.y += self.vy
+            self.y += self.vy
+            airborne = True
         
         # X collision detection
         next_position = self.get_bounding_box()
         next_position.move(x = self.vx)
-        block = level.check_collision(next_position)
-        if block is not None:
+        bbox = level.check_collision(next_position)
+        if bbox is not None:
             if self.vx > 0:
-                self.x = block.get_bounding_box().min_x - PLAYER_SIZE / 2 - COLLISION_HITBOX_GROWTH
+                self.x = bbox.min_x - PLAYER_SIZE / 2 - COLLISION_HITBOX_GROWTH
             elif self.vx < 0:
-                self.x = block.get_bounding_box().max_x + PLAYER_SIZE / 2 + COLLISION_HITBOX_GROWTH
+                self.x = bbox.max_x + PLAYER_SIZE / 2 + COLLISION_HITBOX_GROWTH
                 
             self.vx = 0
         else:
@@ -85,25 +113,38 @@ class Player:
         # Z collision detection
         next_position = self.get_bounding_box()
         next_position.move(z = self.vz)
-        block = level.check_collision(next_position)
-        if block is not None:
+        bbox = level.check_collision(next_position)
+        if bbox is not None:
             if self.vz > 0:
-                self.z = block.get_bounding_box().min_z - PLAYER_SIZE / 2 - COLLISION_HITBOX_GROWTH
+                self.z = bbox.min_z - PLAYER_SIZE / 2 - COLLISION_HITBOX_GROWTH
             elif self.vz < 0:
-                self.z = block.get_bounding_box().max_z + PLAYER_SIZE / 2 + COLLISION_HITBOX_GROWTH
+                self.z = bbox.max_z + PLAYER_SIZE / 2 + COLLISION_HITBOX_GROWTH
                 
             self.vz = 0
         else:
             self.z += self.vz
+            
+        if airborne:
+            slip = 1.0
+        else:
+            slip = self.ground_slip
+
+        if self.prev_slip is None:
+            self.prev_slip = slip
 
         # Finalizing momentum
         self.vx *= float(fl(0.91) * self.prev_slip)
         self.vz *= float(fl(0.91) * self.prev_slip)
         
-        # if self.jumping:
-        #     self.vy = 0.42
-        # else:
-        #     self.vy = (self.vy - 0.08) * 0.98
+        jumping = self.jumping
+        if airborne:
+            jumping = False 
+        
+        if jumping:
+            self.jump_angle = self.facing
+            self.vy = 0.42
+        else:
+            self.vy = (self.vy - 0.08) * 0.98
 
         # Applying inertia threshold
         if abs(self.vx) < self.inertia_threshold:
@@ -112,9 +153,15 @@ class Player:
             self.vz = 0.0
         if abs(self.vy) < self.inertia_threshold:
             self.vy = 0.0
+            
+        # Applying sprintjump boost
+        if self.sprinting and self.jumping and not airborne:
+            facing = fl(self.facing * fl(0.017453292))
+            self.vx -= mcsin(facing) * SPRINTJUMP_BOOST
+            self.vz += mccos(facing) * SPRINTJUMP_BOOST
 
         # Calculating movement multiplier
-        if self.airborne:
+        if airborne:
             movement = fl(0.02)
             # Sprinting start/stop is (by default) delayed by a tick midair
             if (self.air_sprint_delay and self.prev_sprint) or (not self.air_sprint_delay and self.sprinting):
@@ -126,12 +173,6 @@ class Player:
                 movement = fl(movement * (1.0 + fl(0.3)))
             drag = fl(0.91) * slip
             movement *= fl(0.16277136) / (drag * drag * drag)
-
-        # Applying sprintjump boost
-        if self.sprinting and self.jumping:
-            facing = fl(self.facing * fl(0.017453292))
-            self.vx -= mcsin(facing) * SPRINTJUMP_BOOST
-            self.vz += mccos(facing) * SPRINTJUMP_BOOST
 
         # Applying sneaking
         forward = self.forward
@@ -166,47 +207,55 @@ class Player:
 
         self.prev_sprint = self.sprinting
         self.prev_slip = slip
+        self.jumping = False
+        if jumping:
+            airborne = True
+        self.airborne = airborne
         
-    # Collision detection
-    def check_horizontal_collision(self, level: Level):
-        # X
-        block = level.check_collision(self.get_bounding_box().increase(0.0000000119209292))
-        if block is not None:
-            if self.vx > 0:
-                self.x = block.get_bounding_box().min_x - PLAYER_SIZE / 2
-            elif self.vx < 0:
-                self.x = block.get_bounding_box().max_x + PLAYER_SIZE / 2
-                
-            self.vx = 0
+    def look_at_cursor(self, camera: Camera):
+        x, y = camera.world_to_screen(self.x, self.z)
+        mouse_x, mouse_y = pygame.mouse.get_pos()
         
-        # Z
-        block = level.check_collision(self.get_bounding_box().increase(0.0000000119209292))
-        if block is not None:
-            if self.vz > 0:
-                self.z = block.get_bounding_box().min_z - PLAYER_SIZE / 2
-            elif self.vz < 0:
-                self.z = block.get_bounding_box().max_z + PLAYER_SIZE / 2
-                
-            self.vz = 0
+        dx = mouse_x - x
+        dy = mouse_y - y
+        
+        # Calculate standard angle (0° at right, increasing counterclockwise)
+        angle_radians = math.atan2(dy, dx)
+        angle_degrees = math.degrees(angle_radians) + 90
+        
+        # Normalize to -180 to 180 range
+        # This ensures bottom is both -180 and 180 (they're equivalent)
+        angle_degrees = (angle_degrees + 180) % 360 - 180
+        
+        self.facing = angle_degrees
 
     def get_info_text(self):
-        out_facing = self.facing % 180
-
         return [
             f"X: {self.x:.{INFO_PANEL_PRECISION}f}",
             f"Y: {self.y:.{INFO_PANEL_PRECISION}f}", 
             f"Z: {self.z:.{INFO_PANEL_PRECISION}f}",
-            f"F: {out_facing:.{INFO_PANEL_PRECISION}f}",
+            f"F: {self.facing:.{INFO_PANEL_PRECISION}f}",
             f"VX: {self.vx:.{INFO_PANEL_PRECISION}f}",
             f"VY: {self.vy:.{INFO_PANEL_PRECISION}f}",
             f"VZ: {self.vz:.{INFO_PANEL_PRECISION}f}",
-            f"Airborne: {self.airborne}"
+            f"Airborne: {self.airborne}",
+            "",
+            f"Jump Angle: {self.jump_angle:.{INFO_PANEL_PRECISION}f}"
         ]
         
     def get_bounding_box(self) -> BoundingBox:
         return BoundingBox(self.x - PLAYER_SIZE / 2, self.x + PLAYER_SIZE / 2,
                            self.y, self.y + PLAYER_HEIGHT,
                            self.z - PLAYER_SIZE / 2, self.z + PLAYER_SIZE / 2)
+        
+    def set_position(self, x: float = start_x, y: float = start_y, z: float = start_z, f = start_f):
+        self.x = x
+        self.y = y
+        self.z = z
+        self.facing = f
+        self.vx = 0.0
+        self.vy = 0.0
+        self.vz = 0.0
         
     def set_movement(self, w: bool, a: bool, s: bool, d: bool):
         if w and s:

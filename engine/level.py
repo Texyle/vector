@@ -1,5 +1,6 @@
 import pygame
 from .blocks.stone import StoneBlock
+from .blocks.glass_pane import GlassPane, Connection
 from .constants import *
 from .camera import Camera
 from numpy import float32 as fl
@@ -10,6 +11,7 @@ class Level:
     def __init__(self):
         self.blocks = []
         self.test()
+        self.coordinates_font = pygame.font.SysFont(FONT, 14)
 
     def draw(self, surface: pygame.Surface, camera: Camera):
         screen_corners_world = [
@@ -34,7 +36,7 @@ class Level:
         
         visible_blocks = self.get_blocks_in_area(start_x, end_x, start_y, end_y, start_z, end_z)
         for block in visible_blocks:
-            self.draw_block(surface, camera, block)
+            block.draw(surface, camera)
         
         if DRAW_BLOCK_COORDINATES:
             self.draw_coordinates(surface, camera, visible_blocks)
@@ -59,7 +61,7 @@ class Level:
             return
         
         pygame.draw.polygon(surface, block.color, corners_screen)
-        #pygame.draw.polygon(surface, (30, 30, 40), corners_screen, 1)
+        pygame.draw.polygon(surface, (200, 200, 200), corners_screen, 2)
 
     def draw_grid(self, surface: pygame.Surface, camera: Camera, start_x: int, end_x: int, start_z: int, end_z: int):
         for x in range(start_x, end_x + 1):
@@ -73,8 +75,6 @@ class Level:
             pygame.draw.line(surface, GRID_COLOR, start_screen, end_screen, 1)
 
     def draw_coordinates(self, surface: pygame.Surface, camera: Camera, blocks):
-        font = pygame.font.SysFont(FONT, 14)
-        
         for block in blocks:
             center_screen = camera.world_to_screen(block.x+0.5, block.z+0.5)
             
@@ -82,14 +82,14 @@ class Level:
                 continue
             
             coord_text = f"{int(block.x)},{int(block.z)}"
-            text_surface = font.render(coord_text, True, (200, 200, 200))
+            text_surface = self.coordinates_font.render(coord_text, True, (200, 200, 200))
             
             text_x = center_screen[0] - text_surface.get_width() // 2
             text_y = center_screen[1] - text_surface.get_height() // 2
             
             surface.blit(text_surface, (text_x, text_y))
             
-    def check_collision(self, bounding_box: BoundingBox) -> Block:
+    def check_collision(self, bounding_box: BoundingBox) -> BoundingBox:
         blocks = self.get_blocks_in_area(int(bounding_box.min_x)-1, int(bounding_box.max_x)+1,
                                          int(bounding_box.min_y), int(bounding_box.max_y),
                                          int(bounding_box.min_z)-1, int(bounding_box.max_z)+1)
@@ -98,8 +98,11 @@ class Level:
             if block.blockage is False:
                 continue
             
-            if self.bbox_intersect(bounding_box, block.get_bounding_box()):
-                return block
+            block_bboxes = block.get_bounding_box()
+            
+            for bbox in block_bboxes:
+                if self.bbox_intersect(bounding_box, bbox):
+                    return bbox
             
         return None
 
@@ -116,6 +119,23 @@ class Level:
                 if start_x <= block.x <= end_x and start_z <= block.z <= end_z and start_y <= block.y <= end_y]
 
     def test(self):
-        self.blocks.append(StoneBlock(3, 21, 0, blockage=False))
-        self.blocks.append(StoneBlock(3, 21, 1))
-        self.blocks.append(StoneBlock(3, 21, 2, blockage=False))
+        self.blocks.append(StoneBlock(0, 10, 0))
+        self.blocks.append(StoneBlock(0, 10, 1))
+        self.blocks.append(StoneBlock(0, 10, 2))
+        self.blocks.append(StoneBlock(0, 10, 3))
+        self.blocks.append(StoneBlock(0, 10, 4))
+        self.blocks.append(StoneBlock(0, 10, 5))
+        self.blocks.append(StoneBlock(0, 5, 13))
+        self.blocks.append(StoneBlock(-1, 5, 13))
+        self.blocks.append(StoneBlock(1, 5, 13))
+        self.blocks.append(StoneBlock(0, 7, 14))
+        self.blocks.append(StoneBlock(-1, 7, 14))
+        self.blocks.append(StoneBlock(1, 7, 14))
+        self.blocks.append(GlassPane(0, 10, 6, connections=[Connection.POSITIVE_Z, Connection.NEGATIVE_Z]))
+        
+        self.blocks.append(StoneBlock(0, 3, 13))
+        self.blocks.append(StoneBlock(0, 1, 13))
+        self.blocks.append(StoneBlock(0, -1, 13))
+        self.blocks.append(StoneBlock(0, -3, 13))
+        self.blocks.append(StoneBlock(0, -5, 13))
+        self.blocks.append(StoneBlock(0, -7, 13))

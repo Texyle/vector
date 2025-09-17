@@ -12,7 +12,7 @@ class Engine:
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
         self.clock = pygame.time.Clock()
         self.running = True
-        self.player = Player(4.01, 20, 3, 0)
+        self.player = Player(0.5, 11, -0.299999, 0)
         self.camera = Camera(0, 0, math.radians(180))
         self.level = Level()
         self.font = pygame.font.SysFont(FONT, 16)
@@ -28,6 +28,8 @@ class Engine:
                 if event.key == pygame.K_RETURN:
                     self.tick()
                     self.draw(1)
+                if event.key == pygame.K_r:
+                    self.player.set_position()
 
     def handle_input(self, dt: float):
         keys = pygame.key.get_pressed()
@@ -45,8 +47,8 @@ class Engine:
         if keys[pygame.K_COMMA]:
             self.camera.rotate(-1, dt)
 
-        # Player movement controls
-        if keys[pygame.K_LCTRL]:
+        # Player movement controls        
+        if keys[pygame.K_LCTRL] or TOGGLE_SPRINT:
             self.player.set_sprint(True)
         else:
             self.player.set_sprint(False)
@@ -55,10 +57,13 @@ class Engine:
         self.player.set_movement(keys[pygame.K_w], keys[pygame.K_a], keys[pygame.K_s], keys[pygame.K_d])
 
     def tick(self):
-        self.player.tick(self.level)
+        self.player.tick(self.level, self.camera)
     
     def draw(self, dt: float):
         self.screen.fill(BACKGROUND_COLOR)
+        
+        if CENTER_CAMERA_ON_PLAYER:
+            self.camera.set_position(self.player.x, self.player.z)
 
         self.level.draw(self.screen, self.camera)
         self.player.draw(self.screen, self.camera)
