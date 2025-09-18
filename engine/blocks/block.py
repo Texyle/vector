@@ -4,10 +4,11 @@ from ..camera import Camera
 from ..constants import *
 
 class Block:
-    def __init__(self, x: int, y: int, z: int, blockage: bool = True, ground: bool = True):
+    def __init__(self, x: int, y: int, z: int, blockage: bool = True, ground: bool = True, goal: bool = False):
         self.x = x
         self.y = y
         self.z = z
+        self.goal = goal
         self.blockage = blockage
         self.ground = ground
         self.bounding_box = []
@@ -34,6 +35,11 @@ class Block:
             
             if not on_screen:
                 return
+                        
+            if self.goal:
+                outline_color = (0, 255, 0)
+            else:
+                outline_color = (200, 200, 200)
             
             pygame.draw.polygon(surface, self.color, corners_screen)
-            pygame.draw.polygon(surface, (200, 200, 200), corners_screen, 2)
+            pygame.draw.polygon(surface, outline_color, corners_screen, 2)

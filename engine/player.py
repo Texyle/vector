@@ -19,12 +19,12 @@ class Player:
         self.y = float(y)
         self.z = float(z)
         self.vx = 0.0
-        self.vy = 0.0
+        self.vy = -0.001 # to force a Y collision check when starting on ground
         self.vz = 0.0
         self.facing = fl(f)
         self.forward = fl(0.0)
         self.strafe = fl(0.0)
-        self.airborne = True
+        self.airborne = False
         self.sprinting = False
         self.sneaking = False
         self.jumping = False
@@ -256,6 +256,12 @@ class Player:
         self.vx = 0.0
         self.vy = 0.0
         self.vz = 0.0
+        
+    def get_position(self):
+        return self.x, self.y, self.z
+    
+    def get_velocity(self):
+        return self.vx, self.vy, self.vz
         
     def set_movement(self, w: bool, a: bool, s: bool, d: bool):
         if w and s:

@@ -12,7 +12,7 @@ class Engine:
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
         self.clock = pygame.time.Clock()
         self.running = True
-        self.player = Player(0.5, 11, -0.299999, 0)
+        self.player = None
         self.camera = Camera(0, 0, math.radians(180))
         self.level = Level()
         self.font = pygame.font.SysFont(FONT, 16)
@@ -69,6 +69,8 @@ class Engine:
         self.player.draw(self.screen, self.camera)
 
         self.draw_info_panel()
+        
+        self.raycast(self.player.x, self.player.y, self.player.z, 0)
 
         pygame.display.flip()
 
@@ -85,6 +87,33 @@ class Engine:
             text_surface = self.font.render(line, True, TEXT_COLOR)
             self.screen.blit(text_surface, (panel_x + padding, panel_y + padding + i * line_height))
             
+    def reset(self):
+        self.player.set_position
+        
+    def spawn_player(self, x: float, y: float, z: float, f: float):
+        self.player = Player(x, y, z, f)
+        
+    def get_goal_position(self):
+        return self.level.get_goal_position()
+    
+    def get_start_bounds(self):
+        return self.level.get_start_bounds()
+    
+    def get_player_position(self):
+        return self.player.get_position()
+    
+    def get_player_velocity(self):
+        return self.player.get_velocity()
+    
+    def raycast(self, x: float, y: float, z: float, angle: float) -> float:
+        for i in range(RAYCAST_NUMBER):
+            angle = (i / RAYCAST_NUMBER) * 2 * math.pi
+        
+            self.level.raycast(x, y, z, 1.0, angle, self.screen, self.camera)
+            self.level.raycast(x, y-1, z, 1.0, angle, self.screen, self.camera, inverted=True)
+        
+        #return self.level.raycast(x, y, z, angle, self.camera)
+            
     def run(self):
         frame_count = 0
         fps_update_interval = 0.5
@@ -93,6 +122,8 @@ class Engine:
         tick_interval = 1.0 / TICK_RATE
         accumulator = 0.0
         previous_time = time.time()
+        
+        self.player = Player(0.5, 11, -0.29999, 0)
         
         while self.running:
             current_time = time.time()
