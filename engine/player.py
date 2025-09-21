@@ -18,10 +18,15 @@ class Player:
         self.x = float(x)
         self.y = float(y)
         self.z = float(z)
+        self.spawn_x = self.x
+        self.spawn_y = self.y
+        self.spawn_z = self.z
+        self.spawn_f = f
         self.vx = 0.0
-        self.vy = -0.001 # to force a Y collision check when starting on ground
+        self.vy = -0.001
         self.vz = 0.0
         self.facing = fl(f)
+        self.prev_facing = fl(f) # Store previous facing for pitch calculation
         self.forward = fl(0.0)
         self.strafe = fl(0.0)
         self.airborne = False
@@ -38,7 +43,16 @@ class Player:
         self.air_sprint_delay = True
         self.inertia_threshold = 0.005
         self.jump_angle = 0
-    
+        self.jump_height = y
+        self.is_colliding = False
+        
+        self.macro = []
+        self.keys = {
+            'W': False, 'A': False, 'S': False, 'D': False, 
+            'sprint': False, 'sneak': False, 'space': False,
+            'lmb': False, 'rmb': False
+        }
+
     def draw(self, surface: pygame.Surface, camera: Camera):
         screen_x, screen_z = camera.world_to_screen(fl(self.x), fl(self.z))
         size = BLOCK_SIZE * PLAYER_SIZE
@@ -64,21 +78,12 @@ class Player:
         pygame.draw.line(surface, FACING_LINE_COLOR, (screen_x, screen_z), (end_x, end_y), 3)
 
     def tick(self, level: Level, camera: Camera):
-        if LOOK_AT_CURSOR:
-            self.look_at_cursor(camera)
-            
         self.move(level)
-        
-        if self.y > 11.01 and self.y < 11.2 and self.z > 6.0 and self.z < 6.4:
-            print(f"MM: {(6.3-self.z)}")
-            
-        
-        if self.y > 6.01 and self.y < 6.7:
-            print(f"Landing: {-1 * (12.7-self.z)}")
-        
-        
+        self.record_macro_frame()
+    
     def move(self, level):
         airborne = self.airborne
+        self.is_colliding = False
 
         # Y collision detection
         next_position = self.get_bounding_box()
@@ -107,6 +112,7 @@ class Player:
                 self.x = bbox.max_x + PLAYER_SIZE / 2 + COLLISION_HITBOX_GROWTH
                 
             self.vx = 0
+            self.is_colliding = True
         else:
             self.x += self.vx
             
@@ -121,6 +127,7 @@ class Player:
                 self.z = bbox.max_z + PLAYER_SIZE / 2 + COLLISION_HITBOX_GROWTH
                 
             self.vz = 0
+            self.is_colliding = True
         else:
             self.z += self.vz
             
@@ -128,6 +135,9 @@ class Player:
             slip = 1.0
         else:
             slip = self.ground_slip
+            
+        if self.is_colliding:
+            self.sprinting = False
 
         if self.prev_slip is None:
             self.prev_slip = slip
@@ -143,6 +153,7 @@ class Player:
         if jumping:
             self.jump_angle = self.facing
             self.vy = 0.42
+            self.jump_height = self.y
         else:
             self.vy = (self.vy - 0.08) * 0.98
 
@@ -163,7 +174,6 @@ class Player:
         # Calculating movement multiplier
         if airborne:
             movement = fl(0.02)
-            # Sprinting start/stop is (by default) delayed by a tick midair
             if (self.air_sprint_delay and self.prev_sprint) or (not self.air_sprint_delay and self.sprinting):
                 movement = fl(movement + movement * 0.3)
         else:
@@ -186,20 +196,15 @@ class Player:
 
         distance = fl(strafe * strafe + forward * forward)
 
-        # The if avoids division by zero 
         if distance >= fl(0.0001):
-
-            # Normalizes distance vector only if above 1
             distance = fl(math.sqrt(float(distance)))
             if distance < fl(1.0):
                 distance = fl(1.0)
 
-            # Modifies strafe and forward to account for movement
             distance = movement / distance
             forward = forward * distance
             strafe = strafe * distance
 
-            # Adds rotated vectors to velocity
             sin_yaw = fl(mcsin(self.facing * fl(PI) / fl(180.0)))
             cos_yaw = fl(mccos(self.facing * fl(PI) / fl(180.0)))
             self.vx += float(strafe * cos_yaw - forward * sin_yaw)
@@ -212,23 +217,40 @@ class Player:
             airborne = True
         self.airborne = airborne
         
-    def look_at_cursor(self, camera: Camera):
-        x, y = camera.world_to_screen(self.x, self.z)
-        mouse_x, mouse_y = pygame.mouse.get_pos()
+    def record_macro_frame(self):
+        pitch = self.facing - self.prev_facing
+        if pitch > 180:
+            pitch -= 360
+        elif pitch < -180:
+            pitch += 360
+            
+        self.prev_facing = self.facing
         
-        dx = mouse_x - x
-        dy = mouse_y - y
+        # Format the data line as a list of strings
+        data_line = [
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            f"{pitch:.2f}",
+            "0.0",
+            str(self.keys['W']).lower(),
+            str(self.keys['A']).lower(),
+            str(self.keys['S']).lower(),
+            str(self.keys['D']).lower(),
+            str(self.keys['sprint']).lower(),
+            str(self.keys['sneak']).lower(),
+            str(self.keys['space']).lower(),
+            "false",
+            "false",
+            f"0.0",
+            f"0.0",
+            f"0.0"
+        ]
         
-        # Calculate standard angle (0° at right, increasing counterclockwise)
-        angle_radians = math.atan2(dy, dx)
-        angle_degrees = math.degrees(angle_radians) + 90
-        
-        # Normalize to -180 to 180 range
-        # This ensures bottom is both -180 and 180 (they're equivalent)
-        angle_degrees = (angle_degrees + 180) % 360 - 180
-        
-        self.facing = angle_degrees
-
+        self.macro.append(data_line)
+    
     def get_info_text(self):
         return [
             f"X: {self.x:.{INFO_PANEL_PRECISION}f}",
@@ -253,17 +275,27 @@ class Player:
         self.y = y
         self.z = z
         self.facing = f
+        self.prev_facing = f
         self.vx = 0.0
         self.vy = 0.0
         self.vz = 0.0
+        self.jumping = False
         
     def get_position(self):
         return self.x, self.y, self.z
     
     def get_velocity(self):
         return self.vx, self.vy, self.vz
+    
+    def get_distance_to_ground(self):
+        return self.y - self.jump_height
         
     def set_movement(self, w: bool, a: bool, s: bool, d: bool):
+        self.keys['W'] = w
+        self.keys['A'] = a
+        self.keys['S'] = s
+        self.keys['D'] = d
+        
         if w and s:
             self.forward = fl(0.0)
             self.sprinting = False
@@ -285,9 +317,13 @@ class Player:
         else:
             self.strafe = fl(0.0)
             
+    def turn(self, mouse_delta):
+        self.facing += mouse_delta
+            
     def set_sprint(self, sprint: bool):
         self.sprinting = sprint
+        self.keys['sprint'] = sprint
         
     def jump(self):
         self.jumping = True
-            
+        self.keys['space'] = True

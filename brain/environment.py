@@ -1,7 +1,10 @@
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
-from ..engine import Engine
+from engine.engine import Engine
+from engine.constants import *
+import math
+import pygame
 
 class Environment(gym.Env):
     metadata = {'render.modes': ['human']}
@@ -10,93 +13,81 @@ class Environment(gym.Env):
         super(Environment, self).__init__()
         
         self.engine = Engine()
+        self.clock = pygame.time.Clock()
         
         """
-        Action space
+        Unified Action Space
         
-        Placement phase:
-        - Relative X and Z coordinate from 0 to 1
-        - Facing
-        
-        Navigation phase:
-        - Binary W, A, S, D, Sprint, Space inputs
-        - Continuous mouse movement input
+        A single Box that combines all actions:
+        - placement (3 values)
+        - navigation (6 MultiBinary + 1 Box = 7 values)
+        Total shape: (10,)
         """
-        
-        self.placement_action_space = spaces.Box(
-            low=np.array([0.0, 0.0, 0.0]),
-            high=np.array([1.1, 1.1, 360.0]),
+        self.action_space = spaces.Box(
+            low=np.array([0.0, 0.0, -1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1]),
+            high=np.array([1.0, 1.0, 1, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1]),
             dtype=np.float32
         )
-        
-        self.navigation_action_space = spaces.Tuple([
-            spaces.MultiBinary(6),
-            spaces.Box(low=-90.0, high=90.0, shape=(1,), dtype=np.float32)
-        ])
-        
-        self.action_space = spaces.Tuple([
-            spaces.MultiBinary(6),
-            
-            spaces.Box(low=-90.0, high=90.0, shape=(1,), dtype=np.float32)
-        ])
         
         """ 
-        Observation phase
+        Unified Observation Space
         
-        Placement phase:
-        - Goal X
-        - Goal Y
-        - Goal Z
-        - Starting block min X
-        - Starting block max X
-        - Starting block min Z
-        - Starting block max Z
-        
-        Navigation phase:
-        - Distance to goal on X
-        - Distance to goal on Y
-        - Distance to goal on Z
-        - 16 raycasts at current Y to find blockages
-        - 16 inverted raycasts at Y-1 to find ground edges
-        - Distance to ground
-        - Current facing
-        - Velocity on all axis
+        A single Box that combines all observations:
+        - placement (7 values)
+        - navigation (39 values)
+        Total shape: (46,)
         """
-        
-        self.placement_observation_space = spaces.Box(
+        self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf, 
-            shape=(7,),
+            shape=(7 + 39,), 
             dtype=np.float32
         )
         
-        self.nagivation_observation_space = spaces.Box(
-            low=-np.inf, 
-            high=np.inf, 
-            shape=(3 + 16 + 16 + 1 + 1 + 3,), 
-            dtype=np.float32
-        )
+        # Define the shapes of the sub-spaces for internal use
+        self.placement_obs_shape = 7
+        self.navigation_obs_shape = 39
+        self.placement_action_shape = 3
+        self.navigation_action_shape = 7
         
+        self.current_step = 0
+
         self.phase = "placement"
-        self.observation_space = self.placement_observation_space
         self.current_observation = None
         self.steps_in_placement = 0
-        self.max_placement_steps = 5
+        self.max_steps = 150
+        self.attempt_until_macro = 0
+        self.macro_n = 1
+        
+        self.velocity_reward = 0
+        self.distance_reward = 0
+        self.total_reward = 0
+        
+        self.landed = 0
         
     def reset(self, seed=None):
         super().reset(seed=seed)
         
+        self.attempt_until_macro += 1
+        if self.attempt_until_macro >= MACRO_SAVING_INTERVALS:
+            self.save_macro(MACRO_NAME, self.macro_n)
+            self.macro_n += 1
+            self.attempt_until_macro = 0
+            print(f"Landing rate: {self.landed / MACRO_SAVING_INTERVALS:.2f}%")
+            self.landed = 0
+        
         # Reset game engine state
-        # self.game_engine.reset_level()
+        self.engine.reset()
         
         # Reset phase to placement
         self.phase = "placement"
-        self.observation_space = self.placement_observation_space
         self.steps_in_placement = 0
         
         # Get initial observation for placement phase
         observation = self._get_placement_observation()
         info = {}
+        
+        self.current_step = 0
         
         return observation, info
     
@@ -105,105 +96,160 @@ class Environment(gym.Env):
         terminated = False
         truncated = False
         info = {}
-        
+        self.current_step += 1
+                
         if self.phase == "placement":
-            relative_x = action[0]
-            relative_z = action[1] 
-            facing = action[3]
-            
-            bounds = self.game_engine.get_start_area_bounds()
-            absolute_x = bounds['min_x'] + relative_x * (bounds.max_x - bounds.min_x)
-            absolute_z = bounds['min_z'] + relative_z * (bounds.max_z - bounds.min_z)
-            
+            # The agent outputs a single array. Extract the relevant part.
+            placement_action = action[:self.placement_action_shape]
+            relative_x, relative_z, facing = placement_action
+            facing *= 180
+                        
+            bounds = self.engine.get_start_bounds()
+            absolute_x = bounds.min_x + relative_x * (bounds.max_x - bounds.min_x)
+            absolute_z = bounds.min_z + relative_z * (bounds.max_z - bounds.min_z)
+                        
             self.engine.spawn_player(absolute_x, bounds.min_y, absolute_z, facing)
             
             self.phase = "navigation"
             observation = self._get_navigation_observation()
-                    
-        else:
-            key_actions, mouse_action = action
+            
+            return observation, reward, terminated, truncated, info
+                            
+        else: # self.phase == "navigation"
+            # Extract the navigation part of the action
+            navigation_action = action[self.placement_action_shape:]
+            key_actions_flat = navigation_action[:6]
+            mouse_action = navigation_action[6:]
+            
             keys = {
-                'W': bool(key_actions[0]),
-                'A': bool(key_actions[1]),
-                'S': bool(key_actions[2]),
-                'D': bool(key_actions[3]),
-                'sprint': bool(key_actions[4]),
-                'space': bool(key_actions[5])
+                'W': bool(key_actions_flat[0]),
+                'A': bool(key_actions_flat[1]),
+                'S': bool(key_actions_flat[2]),
+                'D': bool(key_actions_flat[3]),
+                'sprint': bool(key_actions_flat[4]),
+                'space': bool(key_actions_flat[5])
             }
-            mouse_delta = mouse_action[0]
+            mouse_delta = mouse_action[0] * 45
             
-            # Apply action to game engine
+            info_lines = [
+                f"V: {self.velocity_reward:.4f}",
+                f"D : {self.distance_reward:.4f}", 
+                f"R: {self.total_reward:.4f}"
+            ]
+            
             self.engine.apply_player_input(keys, mouse_delta)
-            self.engine.update()
+            self.engine.handle_events()
+            self.engine.tick()
+            self.engine.draw(keys, info_lines)
             
-            # Get new observation
             observation = self._get_navigation_observation()
             
             # Calculate reward
-            reward = self._calculate_navigation_reward()
+            reward = self.calculate_navigation_reward()
             
             # Check termination conditions
-            if self.game_engine.player_reached_goal():
+            if self.engine.player_reached_goal():
                 terminated = True
-                reward += 100.0  # Large success reward
-            elif self.game_engine.player_died() or self.game_engine.player_stuck():
+                reward += 100.0
+                self.landed += 1
+            elif self.engine.player_died():
                 terminated = True
-                reward -= 20.0  # Penalty for failure
+            elif self.current_step > self.max_steps:
+                truncated = True
+                info['truncated'] = True
                 
-            # Add info for debugging
-            info["distance_to_goal"] = np.linalg.norm(observation[0:3])
+            # Add info for debugging. Access observation keys correctly.
+            info["distance_to_goal"] = np.linalg.norm(observation[:3])
             info["velocity"] = np.linalg.norm(observation[-3:])
+            
+            self.clock.tick(self.engine.tick_rate)
         
         return observation, reward, terminated, truncated, info
     
     def _get_placement_observation(self):
-        goal_x, goal_y, goal_z = self.engine.get_goal_position()
-        start_bounds = self.engine.get_start_area_bounds()
+        goal_x, goal_y, goal_z = self.engine.get_goal_bbox().get_center()
+        start_bounds = self.engine.get_start_bounds()
         
-        observation = np.array([
+        placement_obs = np.array([
             goal_x, goal_y, goal_z,
             start_bounds.min_x, start_bounds.max_x,
             start_bounds.min_z, start_bounds.max_z
         ], dtype=np.float32)
         
-        return observation
+        # Pad with zeros to match the total observation space size
+        navigation_padding = np.zeros(self.navigation_obs_shape, dtype=np.float32)
+        return np.concatenate([placement_obs, navigation_padding])
     
     def _get_navigation_observation(self):
         player_x, player_y, player_z = self.engine.get_player_position()
-        goal_x, goal_y, goal_z = self.engine.get_goal_position()
+        goal_x, goal_y, goal_z = self.engine.get_goal_bbox().get_center()
         vx, vy, vz = self.engine.get_player_velocity()
+        facing = self.engine.get_player_facing()
         
         dist_to_goal = np.array([
             goal_x - player_x,
-            goal_y - player_y,
             goal_z - player_z
         ], dtype=np.float32)
         
-        raycast_directions = np.linspace(-180, 180, 16)
+        velocity = np.array([vx, vy, vz])
+        
         blockage_rays = []
         ground_rays = []
         
-        for angle in raycast_directions:
-            # Horizontal raycasts for blockages
-            direction = (np.cos(np.radians(angle)), np.sin(np.radians(angle)), 0)
-            hit, distance = self.game_engine.raycast(player_pos, direction)
-            blockage_rays.append(distance if hit else 999.0)
-            
-            # Downward raycasts for ground edges
-            down_direction = (0, -1, 0)  # Straight down
-            hit, ground_dist = self.game_engine.raycast(player_pos, down_direction)
-            ground_rays.append(ground_dist if hit else 999.0)
+        for i in range(RAYCAST_NUMBER):
+            angle = (i / RAYCAST_NUMBER) * 2 * math.pi
         
-        # Distance to ground (shortest of the downward rays)
-        distance_to_ground = min(ground_rays)
+            blockage_rays.append(self.engine.raycast(player_x, player_y, player_z, PLAYER_HEIGHT, angle))
+            ground_rays.append(self.engine.raycast(player_x, player_y-1.25, player_z, 1.25, angle, inverted=True))
         
-        # Combine all observations
-        observation = np.concatenate([
-            dist_to_goal,                    # 3 values
-            np.array(blockage_rays),         # 16 values
-            np.array(ground_rays),           # 16 values
-            np.array([distance_to_ground]),  # 1 value
-            velocity                         # 3 values
+        distance_to_ground = self.engine.get_distance_to_ground()
+        
+        navigation_obs = np.concatenate([
+            dist_to_goal,
+            np.array(blockage_rays),
+            np.array(ground_rays),
+            np.array([distance_to_ground]),
+            np.array([facing]),
+            velocity
         ], dtype=np.float32)
         
-        return observation
+        placement_padding = np.zeros(self.placement_obs_shape, dtype=np.float32)
+        return np.concatenate([placement_padding, navigation_obs])
+    
+    def calculate_navigation_reward(self):
+        reward = 0
+        
+        velocity = self.engine.get_player_velocity()
+        player_pos = self.engine.get_player_position()
+        goal_pos = self.engine.get_goal_bbox().get_center()
+        
+        # goal_dir_x = goal_pos[0] - player_pos[0]
+        # goal_dir_z = goal_pos[2] - player_pos[2]
+        # goal_dir_length = np.sqrt(goal_dir_x**2 + goal_dir_z**2)
+        # if goal_dir_length > 0:
+        #     goal_dir_x /= goal_dir_length
+        #     goal_dir_z /= goal_dir_length
+        
+        # velocity_toward_goal = abs(velocity[0]) + abs(velocity[2])
+        # reward += velocity_toward_goal * 0.05
+        
+        # self.velocity_reward = velocity_toward_goal * 0.01
+        
+        current_distance = min(np.sqrt((goal_pos[0] - player_pos[0])**2 + (goal_pos[2] - player_pos[2])**2), 20)
+        
+        if current_distance > 0:
+            reward_multiplier = (2 / (current_distance))
+            
+        reward += reward_multiplier * 0.1
+        
+        self.distance_reward = reward_multiplier * 0.05
+        
+        if self.engine.is_colliding_wall():
+            reward -= 1
+            
+        self.total_reward = reward
+        
+        return reward
+    
+    def save_macro(self, name, iteration):
+        return self.engine.save_macro(name, iteration)

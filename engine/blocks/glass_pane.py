@@ -8,7 +8,7 @@ class Connection:
     NEGATIVE_Z = (0, -1)
 
 class GlassPane(Block):
-    def __init__(self, x: int, y: int, z: int, blockage: bool = True, connections: list[tuple] = [], goal: bool = True):
+    def __init__(self, x: int, y: int, z: int, blockage: bool = True, connections: list[tuple] = []):
         super().__init__(x, y, z, blockage)
         self.color = (130, 130, 130)
         

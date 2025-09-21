@@ -22,3 +22,16 @@ class BoundingBox:
         self.max_y += y
         self.min_z += z
         self.max_z += z
+        
+    def get_center(self):
+        center_x = (self.min_x + self.max_x) / 2
+        center_y = (self.min_y + self.max_y) / 2
+        center_z = (self.min_z + self.max_z) / 2
+        return (center_x, center_y, center_z)
+    
+    def intersects_and_above(self, other_bbox) -> bool:
+        x_overlap = (self.min_x <= other_bbox.max_x) and (other_bbox.min_x <= self.max_x)
+        above = self.min_y >= other_bbox.max_y
+        z_overlap = (self.min_z <= other_bbox.max_z) and (other_bbox.min_z <= self.max_z)
+        
+        return x_overlap and z_overlap and above

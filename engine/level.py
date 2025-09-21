@@ -12,6 +12,7 @@ class Level:
     def __init__(self):
         self.blocks = []
         self.start_bounds = None
+        self.goal_bounds = None
         self.test()
         self.coordinates_font = pygame.font.SysFont(FONT, 14)
 
@@ -44,14 +45,17 @@ class Level:
             self.draw_coordinates(surface, camera, visible_blocks)
             
         if DRAW_START_BOUNDS:
-            self.draw_start_bounds(surface, camera)
+            self.draw_bounds(self.start_bounds, START_BOUNDS_COLOR, surface, camera)
             
-    def draw_start_bounds(self, surface: pygame.Surface, camera: Camera):
+        if DRAW_GOAL_BOUNDS:
+            self.draw_bounds(self.goal_bounds, GOAL_BOUNDS_COLOR, surface, camera)
+            
+    def draw_bounds(self, bounds: BoundingBox, color, surface: pygame.Surface, camera: Camera):
         corners_world = [
-            (self.start_bounds.min_x, self.start_bounds.min_z),
-            (self.start_bounds.max_x, self.start_bounds.min_z),
-            (self.start_bounds.max_x, self.start_bounds.max_z),
-            (self.start_bounds.min_x, self.start_bounds.max_z)
+            (bounds.min_x, bounds.min_z),
+            (bounds.max_x, bounds.min_z),
+            (bounds.max_x, bounds.max_z),
+            (bounds.min_x, bounds.max_z)
         ]
         
         corners_screen = [camera.world_to_screen(x, z) for x, z in corners_world]
@@ -65,7 +69,7 @@ class Level:
         if not on_screen:
             return
         
-        pygame.draw.polygon(surface, START_BOUNDS_COLOR, corners_screen, 2)
+        pygame.draw.polygon(surface, color, corners_screen, 2)
 
     def draw_grid(self, surface: pygame.Surface, camera: Camera, start_x: int, end_x: int, start_z: int, end_z: int):
         for x in range(start_x, end_x + 1):
@@ -122,10 +126,8 @@ class Level:
         return [block for block in self.blocks 
                 if start_x <= block.x <= end_x and start_z <= block.z <= end_z and start_y <= block.y <= end_y]
         
-    def get_goal_position(self):
-        for block in self.blocks:
-            if block.goal:
-                return block.x+0.5, block.y+1, block.z+0.5
+    def get_goal_bbox(self):
+        return self.goal_bounds
             
     def get_start_bounds(self) -> BoundingBox:
         return self.start_bounds
@@ -206,7 +208,6 @@ class Level:
         for bbox in block.get_bounding_box():
             exit_point = find_exit_point(x, y, z, dir_x, dir_y, dir_z, bbox)
             if exit_point is None:
-                print("what?")
                 continue
             
             next_x = exit_point[0] + dir_x * INVERTED_RAYCAST_STEP
@@ -244,7 +245,7 @@ class Level:
         search_y_max = math.floor(y+height)
         
         for block in self.blocks:
-            if block.x == search_x and (block.y == search_y_min or block.y == search_y_max) and block.z == search_z:
+            if block.x == search_x and block.y >= search_y_min and block.y <= search_y_max and block.z == search_z:
                 return block
             
         return None
@@ -264,9 +265,14 @@ class Level:
         )
 
     def test(self):
-        self.start_bounds = BoundingBox(-0.3, 1.3, 11, 11, -0.3, 1.3)
+        self.start_bounds = BoundingBox(1.299999, -0.299999, 11, 11, -0.299999, 2.699)
+        self.goal_bounds = BoundingBox(-0.299999, 1.299999, 11, 11, 6.300001, 9.3)
         self.blocks.append(StoneBlock(0, 10, 0))
         self.blocks.append(StoneBlock(0, 10, 1))
-        self.blocks.append(StoneBlock(3, 11, 0))
-        self.blocks.append(StoneBlock(-3, 12, 0))
-        self.blocks.append(StoneBlock(0, 10, 5, goal=True))
+        self.blocks.append(StoneBlock(0, 10, 2))
+        self.blocks.append(StoneBlock(0, 12, 3))
+        self.blocks.append(StoneBlock(0, 12, 4))
+        self.blocks.append(StoneBlock(0, 12, 5))
+        self.blocks.append(StoneBlock(0, 10, 6))
+        self.blocks.append(StoneBlock(0, 10, 7))
+        self.blocks.append(StoneBlock(0, 10, 8))

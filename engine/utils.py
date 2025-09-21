@@ -70,57 +70,32 @@ def find_exit_point(x, y, z, dir_x, dir_y, dir_z, bbox):
     if dir_x != 0:
         t_east = (bbox.max_x - x) / dir_x
         if t_east > 0:
-            y_east = y + dir_y * t_east
             z_east = z + dir_z * t_east
-            if (bbox.min_y <= y_east <= bbox.max_y and 
-                bbox.min_z <= z_east <= bbox.max_z):
-                intersections.append((t_east, bbox.max_x, y_east, z_east))
+            if bbox.min_z <= z_east <= bbox.max_z:
+                intersections.append((t_east, bbox.max_x, z_east))
         
         t_west = (bbox.min_x - x) / dir_x
         if t_west > 0:
-            y_west = y + dir_y * t_west
             z_west = z + dir_z * t_west
-            if (bbox.min_y <= y_west <= bbox.max_y and 
-                bbox.min_z <= z_west <= bbox.max_z):
-                intersections.append((t_west, bbox.min_x, y_west, z_west))
-    
-    if dir_y != 0:
-        t_top = (bbox.max_y - y) / dir_y
-        if t_top > 0:
-            x_top = x + dir_x * t_top
-            z_top = z + dir_z * t_top
-            if (bbox.min_x <= x_top <= bbox.max_x and 
-                bbox.min_z <= z_top <= bbox.max_z):
-                intersections.append((t_top, x_top, bbox.max_y, z_top))
-        
-        t_bottom = (bbox.min_y - y) / dir_y
-        if t_bottom > 0:
-            x_bottom = x + dir_x * t_bottom
-            z_bottom = z + dir_z * t_bottom
-            if (bbox.min_x <= x_bottom <= bbox.max_x and 
-                bbox.min_z <= z_bottom <= bbox.max_z):
-                intersections.append((t_bottom, x_bottom, bbox.min_y, z_bottom))
+            if bbox.min_z <= z_west <= bbox.max_z:
+                intersections.append((t_west, bbox.min_x, z_west))
     
     if dir_z != 0:
         t_north = (bbox.max_z - z) / dir_z
         if t_north > 0:
             x_north = x + dir_x * t_north
-            y_north = y + dir_y * t_north
-            if (bbox.min_x <= x_north <= bbox.max_x and 
-                bbox.min_y <= y_north <= bbox.max_y):
-                intersections.append((t_north, x_north, y_north, bbox.max_z))
+            if bbox.min_x <= x_north <= bbox.max_x:
+                intersections.append((t_north, x_north, bbox.max_z))
         
         t_south = (bbox.min_z - z) / dir_z
         if t_south > 0:
             x_south = x + dir_x * t_south
-            y_south = y + dir_y * t_south
-            if (bbox.min_x <= x_south <= bbox.max_x and 
-                bbox.min_y <= y_south <= bbox.max_y):
-                intersections.append((t_south, x_south, y_south, bbox.min_z))
+            if bbox.min_x <= x_south <= bbox.max_x:
+                intersections.append((t_south, x_south, bbox.min_z))
     
     if not intersections:
         return None
     
-    closest_t, exit_x, exit_y, exit_z = min(intersections, key=lambda x: x[0])
+    closest_t, exit_x, exit_z = min(intersections, key=lambda x: x[0])
     
-    return exit_x, exit_y, exit_z, closest_t
+    return exit_x, y, exit_z, closest_t
