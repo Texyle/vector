@@ -11,7 +11,7 @@ from environment import Environment
 macro_name = '4b'
 
 # Path configuration
-SAVE_PATH = "./logs/continuous_training_logs/"
+SAVE_PATH = "./models/"
 os.makedirs(SAVE_PATH, exist_ok=True)
 
 # Environment and Model Parameters
@@ -28,10 +28,10 @@ checkpoint_callback = CheckpointCallback(
 )
 
 # Check if saved model exists and load it
-model_path = f"{SAVE_PATH}/-.zip"
+model_path = f"{SAVE_PATH}/triple_2.zip"
 if os.path.exists(model_path):
     print("Loading existing model...")
-    model = PPO.load(model_path, env=env, device="cuda")
+    model = PPO.load(model_path, env=env, device="cpu")
     total_timesteps = model.num_timesteps
     print(f"Resuming from {total_timesteps} timesteps")
 else:
@@ -42,7 +42,7 @@ else:
         verbose=0,
         n_steps=TIMESTEPS_PER_CHUNK,
         tensorboard_log="./logs/",
-        device="cuda"
+        device="cpu"
     )
     total_timesteps = 0
 

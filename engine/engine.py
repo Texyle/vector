@@ -68,13 +68,13 @@ class Engine:
         #     self.camera.rotate(-1, dt)
 
         # Player movement controls        
-        # if keys[pygame.K_LCTRL] or TOGGLE_SPRINT:
-        #     self.player.set_sprint(True)
-        # else:
-        #     self.player.set_sprint(False)
-        # if keys[pygame.K_SPACE]:
-        #     self.player.jump()
-        # self.player.set_movement(keys[pygame.K_w], keys[pygame.K_a], keys[pygame.K_s], keys[pygame.K_d])
+        if keys[pygame.K_LCTRL] or TOGGLE_SPRINT:
+            self.player.set_sprint(True)
+        else:
+            self.player.set_sprint(False)
+        if keys[pygame.K_SPACE]:
+            self.player.jump()
+        self.player.set_movement(keys[pygame.K_w], keys[pygame.K_a], keys[pygame.K_s], keys[pygame.K_d])
 
     def tick(self):
         self.player.tick(self.level, self.camera)
@@ -121,7 +121,7 @@ class Engine:
         key_size = 50
         spacing = 10
         base_x = 20
-        base_y = 500
+        base_y = 550
         
         # Key colors
         inactive_color = (100, 100, 100) # Grey
@@ -172,8 +172,8 @@ class Engine:
     def spawn_player(self, x: float, y: float, z: float, f: float):
         self.player = Player(x, y, z, f)
         
-    def get_goal_bbox(self):
-        return self.level.get_goal_bbox()
+    def get_goal(self):
+        return self.level.goal_x, self.level.goal_y, self.level.goal_z
     
     def get_player_bbox(self):
         return self.player.get_bounding_box()
@@ -237,14 +237,34 @@ class Engine:
     def raycast(self, x: float, y: float, z: float, height: float, angle: float, inverted: bool = True) -> float:
         return self.level.raycast(x, y, z, height, angle, self.screen, self.camera, inverted)
     
-    def player_reached_goal(self):
-        goal_bbox = self.get_goal_bbox()
-                
-        return self.player.get_bounding_box().intersects_and_above(goal_bbox)
+    def get_offset(self):
+        start_pos = self.get_start_bounds().get_center()
+        player_pos = self.player.get_bounding_box().get_center()
+        
+        offset_x = player_pos[0] - self.level.goal_x
+        offset_z = player_pos[2] - self.level.goal_z
+            
+        return offset_x, offset_z
+    
+    def get_offset_total(self):
+        offset_x, offset_z = self.get_offset()
+        
+        offset = math.sqrt(offset_x ** 2 + offset_z ** 2)
+        
+        if offset_x < 0 or offset_z < 0:
+            return offset * -1
+        
+        return offset
+            
+    def reached_goal(self):
+        offset_x, offset_y = self.get_offset()
+        if offset_x > 0 and offset_y > 0:
+            return True
+        
+        return False
     
     def player_died(self):
-        goal = self.get_goal_bbox()
-        if self.player.y < goal.max_y:
+        if self.player.y < self.level.goal_y:
             return True
         
         return False

@@ -58,10 +58,12 @@ class Environment(gym.Env):
         self.max_steps = 150
         self.attempt_until_macro = 0
         self.macro_n = 1
+        self.best_offset = -999.0
         
         self.velocity_reward = 0
         self.distance_reward = 0
         self.total_reward = 0
+        self.current_distance = 0.0
         
         self.landed = 0
         
@@ -73,7 +75,7 @@ class Environment(gym.Env):
             self.save_macro(MACRO_NAME, self.macro_n)
             self.macro_n += 1
             self.attempt_until_macro = 0
-            print(f"Landing rate: {self.landed / MACRO_SAVING_INTERVALS:.2f}%")
+            print(f"Landing rate: {self.landed / MACRO_SAVING_INTERVALS:.2f}% ({self.landed}/{MACRO_SAVING_INTERVALS})")
             self.landed = 0
         
         # Reset game engine state
@@ -132,9 +134,11 @@ class Environment(gym.Env):
             mouse_delta = mouse_action[0] * 45
             
             info_lines = [
-                f"V: {self.velocity_reward:.4f}",
-                f"D : {self.distance_reward:.4f}", 
-                f"R: {self.total_reward:.4f}"
+                f"Velocity R: {self.velocity_reward:.4f}",
+                f"Distance R : {self.distance_reward:.4f}", 
+                f"Total R: {self.total_reward:.4f}",
+                f"Offset: {self.current_distance:.5f}",
+                f"PB: {self.best_offset:.5f}"
             ]
             
             self.engine.apply_player_input(keys, mouse_delta)
@@ -145,15 +149,21 @@ class Environment(gym.Env):
             observation = self._get_navigation_observation()
             
             # Calculate reward
-            reward = self.calculate_navigation_reward()
+            reward, offset = self.calculate_navigation_reward()
+            
+            if offset > self.best_offset:
+                self.best_offset = offset
+                self.save_macro(MACRO_NAME + "_NEW_PB", self.macro_n)
             
             # Check termination conditions
-            if self.engine.player_reached_goal():
+            if self.engine.reached_goal():
                 terminated = True
-                reward += 100.0
+                reward += 5.0
                 self.landed += 1
+                self.save_macro(MACRO_NAME + "_LANDED", self.macro_n)
             elif self.engine.player_died():
                 terminated = True
+                reward -= 100
             elif self.current_step > self.max_steps:
                 truncated = True
                 info['truncated'] = True
@@ -167,7 +177,7 @@ class Environment(gym.Env):
         return observation, reward, terminated, truncated, info
     
     def _get_placement_observation(self):
-        goal_x, goal_y, goal_z = self.engine.get_goal_bbox().get_center()
+        goal_x, goal_y, goal_z = self.engine.get_goal()
         start_bounds = self.engine.get_start_bounds()
         
         placement_obs = np.array([
@@ -182,7 +192,7 @@ class Environment(gym.Env):
     
     def _get_navigation_observation(self):
         player_x, player_y, player_z = self.engine.get_player_position()
-        goal_x, goal_y, goal_z = self.engine.get_goal_bbox().get_center()
+        goal_x, goal_y, goal_z = self.engine.get_goal()
         vx, vy, vz = self.engine.get_player_velocity()
         facing = self.engine.get_player_facing()
         
@@ -217,39 +227,50 @@ class Environment(gym.Env):
         return np.concatenate([placement_padding, navigation_obs])
     
     def calculate_navigation_reward(self):
-        reward = 0
-        
+        reward = -0.0001
+
         velocity = self.engine.get_player_velocity()
-        player_pos = self.engine.get_player_position()
-        goal_pos = self.engine.get_goal_bbox().get_center()
+        player_pos = self.engine.get_player_bbox()
+        goal_pos = self.engine.get_goal()
+        player_center = player_pos.get_center()
+
+        goal_dir_vector = np.array([goal_pos[0] - player_center[0], goal_pos[2] - player_center[2]])
         
-        # goal_dir_x = goal_pos[0] - player_pos[0]
-        # goal_dir_z = goal_pos[2] - player_pos[2]
-        # goal_dir_length = np.sqrt(goal_dir_x**2 + goal_dir_z**2)
-        # if goal_dir_length > 0:
-        #     goal_dir_x /= goal_dir_length
-        #     goal_dir_z /= goal_dir_length
+        goal_dir_length = np.linalg.norm(goal_dir_vector)
+        if goal_dir_length > 0:
+            goal_dir_normalized = goal_dir_vector / goal_dir_length
+        else:
+            return 1.0
+
+        velocity_vector = np.array([velocity[0], velocity[2]])
+        dot_product = np.dot(velocity_vector, goal_dir_normalized)
+        dot_product = np.sign(dot_product) * np.abs(dot_product)**2
+        reward += dot_product
         
-        # velocity_toward_goal = abs(velocity[0]) + abs(velocity[2])
-        # reward += velocity_toward_goal * 0.05
+        self.velocity_reward = dot_product
         
-        # self.velocity_reward = velocity_toward_goal * 0.01
+        current_distance = self.engine.get_offset_total()
+        self.current_distance = current_distance
         
-        current_distance = min(np.sqrt((goal_pos[0] - player_pos[0])**2 + (goal_pos[2] - player_pos[2])**2), 20)
-        
-        if current_distance > 0:
-            reward_multiplier = (2 / (current_distance))
-            
-        reward += reward_multiplier * 0.1
-        
-        self.distance_reward = reward_multiplier * 0.05
+        if current_distance >= 0:
+            reward_multiplier = current_distance ** 2
+        elif current_distance > -4:
+            reward_multiplier = abs(1 / (current_distance))     
+            reward += reward_multiplier * 0.1
+            self.distance_reward = reward_multiplier * 0.1
+        else:
+            self.distance_reward = 0
         
         if self.engine.is_colliding_wall():
             reward -= 1
             
+        # if self.current_step > 20:
+        #     if player_pos.intersects_and_above(start_pos, True):
+        #         reward -= 0.1
+            
         self.total_reward = reward
         
-        return reward
+        return reward, current_distance
     
     def save_macro(self, name, iteration):
         return self.engine.save_macro(name, iteration)

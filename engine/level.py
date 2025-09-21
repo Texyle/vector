@@ -12,7 +12,9 @@ class Level:
     def __init__(self):
         self.blocks = []
         self.start_bounds = None
-        self.goal_bounds = None
+        self.goal_x = 0.0
+        self.goal_y = 0.0
+        self.goal_z = 0.0
         self.test()
         self.coordinates_font = pygame.font.SysFont(FONT, 14)
 
@@ -48,7 +50,9 @@ class Level:
             self.draw_bounds(self.start_bounds, START_BOUNDS_COLOR, surface, camera)
             
         if DRAW_GOAL_BOUNDS:
-            self.draw_bounds(self.goal_bounds, GOAL_BOUNDS_COLOR, surface, camera)
+            screen_x, screen_y = camera.world_to_screen(self.goal_x, self.goal_z)
+            pygame.draw.line(surface, GOAL_BOUNDS_COLOR, (screen_x, 0), (screen_x, SCREEN_HEIGHT), 1) 
+            pygame.draw.line(surface, GOAL_BOUNDS_COLOR, (0, screen_y), (SCREEN_WIDTH, screen_y), 1) 
             
     def draw_bounds(self, bounds: BoundingBox, color, surface: pygame.Surface, camera: Camera):
         corners_world = [
@@ -125,9 +129,6 @@ class Level:
     def get_blocks_in_area(self, start_x: int, end_x: int, start_y: int, end_y: int, start_z: int, end_z: int):
         return [block for block in self.blocks 
                 if start_x <= block.x <= end_x and start_z <= block.z <= end_z and start_y <= block.y <= end_y]
-        
-    def get_goal_bbox(self):
-        return self.goal_bounds
             
     def get_start_bounds(self) -> BoundingBox:
         return self.start_bounds
@@ -266,7 +267,11 @@ class Level:
 
     def test(self):
         self.start_bounds = BoundingBox(1.299999, -0.299999, 11, 11, -0.299999, 2.699)
-        self.goal_bounds = BoundingBox(-0.299999, 1.299999, 11, 11, 6.300001, 9.3)
+        
+        self.goal_z = 6.6
+        self.goal_x = -0.299999
+        self.goal_y = 11
+        
         self.blocks.append(StoneBlock(0, 10, 0))
         self.blocks.append(StoneBlock(0, 10, 1))
         self.blocks.append(StoneBlock(0, 10, 2))
