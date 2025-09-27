@@ -8,6 +8,12 @@ import numpy as np
 import math
 from .utils import *
 
+class LandingMode:
+    NORMAL = 1
+    Z_NEO = 2
+    HIT = 3
+    ENTER = 4
+
 class Level:
     def __init__(self):
         self.blocks = []
@@ -15,6 +21,7 @@ class Level:
         self.goal_x = 0.0
         self.goal_y = 0.0
         self.goal_z = 0.0
+        self.landing_mode = LandingMode.NORMAL
         self.test()
         self.coordinates_font = pygame.font.SysFont(FONT, 14)
 
@@ -268,9 +275,10 @@ class Level:
     def test(self):
         self.start_bounds = BoundingBox(1.299999, -0.299999, 11, 11, -0.299999, 2.699)
         
-        self.goal_z = 6.6
-        self.goal_x = -0.299999
+        self.goal_z = 6.3
+        self.goal_x = -0.3
         self.goal_y = 11
+        self.landing_mode = LandingMode.Z_NEO
         
         self.blocks.append(StoneBlock(0, 10, 0))
         self.blocks.append(StoneBlock(0, 10, 1))

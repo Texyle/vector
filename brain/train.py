@@ -4,95 +4,78 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import time
 import numpy as np
 from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.callbacks import CheckpointCallback
 from environment import Environment
+from stable_baselines3.common.callbacks import CheckpointCallback
+import threading
 
-macro_name = '4b'
+# Configuration
+MACRO_NAME = '4b'
+SAVE_PATH = "./logs/continuous_training_logs/"
+LOAD_PATH = "./models/"
+MODEL = "triple_gg"
+TIMESTEPS_PER_CHUNK = 1024*8
+NUM_ENVIRONMENTS = 4
+ENTROPY_COEF = 0.01
 
-# Path configuration
-SAVE_PATH = "./models/"
-os.makedirs(SAVE_PATH, exist_ok=True)
+# Create a function to initialize environments
+def make_env():
+    def _init():
+        env = Environment()
+        return env
+    return _init
 
-# Environment and Model Parameters
-TIMESTEPS_PER_CHUNK = 4096
+if __name__ == "__main__":
+    # Create directories
+    os.makedirs(SAVE_PATH, exist_ok=True)
+    os.makedirs(LOAD_PATH, exist_ok=True)
 
-# Create and wrap the environment
-env = DummyVecEnv([lambda: Environment()])
+    # Create parallel environments
+    env = SubprocVecEnv([make_env() for _ in range(NUM_ENVIRONMENTS)])
 
-# Setup Checkpoint Callback
-checkpoint_callback = CheckpointCallback(
-    save_freq=TIMESTEPS_PER_CHUNK,
-    save_path=SAVE_PATH,
-    name_prefix="vector_agent"
-)
-
-# Check if saved model exists and load it
-model_path = f"{SAVE_PATH}/triple_2.zip"
-if os.path.exists(model_path):
-    print("Loading existing model...")
-    model = PPO.load(model_path, env=env, device="cpu")
-    total_timesteps = model.num_timesteps
-    print(f"Resuming from {total_timesteps} timesteps")
-else:
-    print("Initializing new model...")
-    model = PPO(
-        "MlpPolicy",
-        env,
-        verbose=0,
-        n_steps=TIMESTEPS_PER_CHUNK,
-        tensorboard_log="./logs/",
-        device="cpu"
+    checkpoint_callback = CheckpointCallback(
+        save_freq=TIMESTEPS_PER_CHUNK*15,
+        save_path=SAVE_PATH,
+        name_prefix="vector_agent",
+        save_replay_buffer=False,
+        save_vecnormalize=False,
     )
-    total_timesteps = 0
 
-print("Starting continuous training...")
-
-# Track total training time and iteration count
-total_training_start_time = time.time()
-iteration = 1
-
-try:
-    while True:
-        start_time = time.time()
-        print(f"\n=== Starting Training Iteration {iteration} ===")
-
-        # Continue training
-        model.learn(
-            total_timesteps=TIMESTEPS_PER_CHUNK,
-            callback=checkpoint_callback,
-            reset_num_timesteps=False  # Keep timestep count continuous
+    # Load or initialize model
+    model_path = f"{LOAD_PATH}/{MODEL}.zip"
+    if os.path.exists(model_path):
+        print("Loading existing model...")
+        model = PPO.load(model_path, env=env, device="cpu", verbose=2, n_steps=TIMESTEPS_PER_CHUNK, ent_coef = ENTROPY_COEF)
+    else:
+        print("Initializing new model...")
+        model = PPO(
+            "MlpPolicy",
+            env,
+            verbose=2,
+            n_steps=TIMESTEPS_PER_CHUNK,
+            device="cpu",
+            ent_coef=ENTROPY_COEF
         )
-        
-        # Calculate metrics
-        end_time = time.time()
-        duration = end_time - start_time
-        total_timesteps += TIMESTEPS_PER_CHUNK
-        fps = TIMESTEPS_PER_CHUNK / duration
 
-        total_training_time = time.time() - total_training_start_time
-        hours = int(total_training_time // 3600)
-        minutes = int((total_training_time % 3600) // 60)
-        seconds = int(total_training_time % 60)
-
-        print(f"\nIteration {iteration} completed:")
-        print(f"  Total timesteps: {total_timesteps}")
-        print(f"  Iteration duration: {duration:.2f} seconds")
-        print(f"  Total training time: {hours:02d}:{minutes:02d}:{seconds:02d}")
-        print(f"  FPS: {fps:.0f}")
-        print("-----------------------------")
-
-        iteration += 1
-
-except KeyboardInterrupt:
-    total_training_time = time.time() - total_training_start_time
-    hours = int(total_training_time // 3600)
-    minutes = int((total_training_time % 3600) // 60)
-    seconds = int(total_training_time % 60)
-
-    print(f"\nTraining stopped by user after {hours:02d}:{minutes:02d}:{seconds:02d}")
-    print("Saving final model...")
-    model.save(f"{SAVE_PATH}/final_vector_agent")
-    print("Final model saved.")
-
-env.close()
+    # Train
+    print("Starting training...")
+    total_timesteps = 0
+    try:
+        while True:
+            start_time = time.time()
+            model.learn(
+                total_timesteps=TIMESTEPS_PER_CHUNK,
+                callback=checkpoint_callback,
+                reset_num_timesteps=False
+            )
+            total_timesteps += TIMESTEPS_PER_CHUNK
+            end_time = time.time()
+            duration = end_time - start_time
+            fps = (TIMESTEPS_PER_CHUNK * NUM_ENVIRONMENTS) / duration
+            print(f"Iteration completed. Total timesteps: {total_timesteps}, FPS: {fps:.0f}")
+    except KeyboardInterrupt:
+        print("Training stopped by user.")
+        model.save(f"{SAVE_PATH}/final_vector_agent")
+    finally:
+        env.close()

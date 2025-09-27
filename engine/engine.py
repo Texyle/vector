@@ -16,7 +16,7 @@ class Engine:
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
         self.clock = pygame.time.Clock()
         self.running = True
-        self.player = None
+        self.player = Player()
         self.camera = Camera(0, 0, math.radians(180))
         self.level = Level()
         self.font = pygame.font.SysFont(FONT, 16)
@@ -24,8 +24,13 @@ class Engine:
         self.fps_samples = []
         self.max_samples = 10
         self.tick_rate = 1000
-        self.do_draw = True
+        self.do_draw = False
         self.last_player = None
+        self.recent_attempts = []
+        
+        self.offset_x = -999.0
+        self.offset_z = -999.0
+        self.total_offset = -999.0
     
     def handle_events(self):
         for event in pygame.event.get():
@@ -79,6 +84,7 @@ class Engine:
     def tick(self):
         self.player.tick(self.level, self.camera)
         self.last_player = self.player
+        self.check_offset()
     
     def draw(self, active_keys = {}, ai_info = []):
         if not self.do_draw:
@@ -166,8 +172,23 @@ class Engine:
             text_rect = text_surface.get_rect(center=(pos[0] + width / 2, pos[1] + height / 2))
             self.screen.blit(text_surface, text_rect)
             
+    def draw_recent_attempts(self, attempts):
+        start_x = SCREEN_WIDTH - 100
+        start_y = 0
+        line_height = 30
+        
+        attempts.insert(0, f"Recent attempts:")
+        
+        for i, line in enumerate(attempts):
+            text_surface = self.font.render(line, True, TEXT_COLOR)
+            self.screen.blit(text_surface, (start_x, start_y + (i + 12) * line_height))
+            
     def reset(self):
-        self.player = None
+        self.player.set_position()
+        self.player.reset_macro()
+        self.offset_x = -999.0
+        self.offset_z = -999.0
+        self.total_offset = -999.0
         
     def spawn_player(self, x: float, y: float, z: float, f: float):
         self.player = Player(x, y, z, f)
@@ -237,28 +258,27 @@ class Engine:
     def raycast(self, x: float, y: float, z: float, height: float, angle: float, inverted: bool = True) -> float:
         return self.level.raycast(x, y, z, height, angle, self.screen, self.camera, inverted)
     
-    def get_offset(self):
-        start_pos = self.get_start_bounds().get_center()
-        player_pos = self.player.get_bounding_box().get_center()
+    def check_offset(self):
+        start_x, _, start_z = self.level.get_start_bounds().get_center()
         
-        offset_x = player_pos[0] - self.level.goal_x
-        offset_z = player_pos[2] - self.level.goal_z
+        if self.level.goal_x < start_x:
+            invert_x = False
+        else:
+            invert_x = True
             
-        return offset_x, offset_z
-    
-    def get_offset_total(self):
-        offset_x, offset_z = self.get_offset()
-        
-        offset = math.sqrt(offset_x ** 2 + offset_z ** 2)
-        
-        if offset_x < 0 or offset_z < 0:
-            return offset * -1
-        
-        return offset
+        if self.level.goal_z > start_z:
+            invert_z = False
+        else:
+            invert_z = True
+            
+        landed, offset_x, offset_z, total_offset = self.player.get_offset(self.level.goal_x, self.level.goal_y, self.level.goal_z, self.level.landing_mode, invert_x, invert_z)
+        if landed:
+            self.offset_x = offset_x
+            self.offset_z = offset_z
+            self.total_offset = total_offset
             
     def reached_goal(self):
-        offset_x, offset_y = self.get_offset()
-        if offset_x > 0 and offset_y > 0:
+        if self.total_offset > 0:
             return True
         
         return False
@@ -274,10 +294,10 @@ class Engine:
     
     def apply_player_input(self, keys, mouse_delta):
         self.player.turn(mouse_delta)
-        self.player.set_sprint(keys['sprint'])
-        self.player.set_movement(keys['W'], keys['A'], keys['S'], keys['D'])
-        if keys['space']:
-            self.player.jump()
+        # self.player.set_sprint(keys['sprint'])
+        self.player.set_movement(keys['W'], keys['A'], keys['S'], keys['D'], keys['sprint'], keys['space'])
+        # if keys['space']:
+        #     self.player.jump()
             
     def run(self):
         frame_count = 0

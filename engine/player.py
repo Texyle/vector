@@ -14,7 +14,7 @@ class Player:
     start_z = -0.299999
     start_f = 0
     
-    def __init__(self, x: float, y: float, z: float, f: fl):
+    def __init__(self, x: float = start_x, y: float = start_y, z: float = start_z, f: fl = start_f):
         self.x = float(x)
         self.y = float(y)
         self.z = float(z)
@@ -45,6 +45,10 @@ class Player:
         self.jump_angle = 0
         self.jump_height = y
         self.is_colliding = False
+        
+        self.prev_x = 0.0
+        self.prev_y = 0.0
+        self.prev_z = 0.0
         
         self.macro = []
         self.keys = {
@@ -84,6 +88,10 @@ class Player:
     def move(self, level):
         airborne = self.airborne
         self.is_colliding = False
+        
+        self.prev_x = self.x
+        self.prev_y = self.y
+        self.prev_z = self.z
 
         # Y collision detection
         next_position = self.get_bounding_box()
@@ -251,6 +259,9 @@ class Player:
         
         self.macro.append(data_line)
     
+    def reset_macro(self):
+        self.macro = []
+    
     def get_info_text(self):
         return [
             f"X: {self.x:.{INFO_PANEL_PRECISION}f}",
@@ -277,9 +288,15 @@ class Player:
         self.facing = f
         self.prev_facing = f
         self.vx = 0.0
-        self.vy = 0.0
+        self.vy = -0.001
         self.vz = 0.0
+        self.airborne = False
         self.jumping = False
+        self.keys = {
+            'W': False, 'A': False, 'S': False, 'D': False, 
+            'sprint': False, 'sneak': False, 'space': False,
+            'lmb': False, 'rmb': False
+        }
         
     def get_position(self):
         return self.x, self.y, self.z
@@ -289,8 +306,55 @@ class Player:
     
     def get_distance_to_ground(self):
         return self.y - self.jump_height
+    
+    def is_landing_tick(self, y):
+        if self.y > y and self.y + self.vy < y:
+            return True
         
-    def set_movement(self, w: bool, a: bool, s: bool, d: bool):
+    def get_offset(self, x, y, z, landing_mode, invert_x, invert_z):
+        if not self.is_landing_tick(y):
+            return False, 0, 0, 0
+        
+        offset_x = 0
+        offset_z = 0
+        
+        # NORMAL
+        if landing_mode == 1:
+            if self.vz >= 0:
+                offset_z = self.z - z
+            else:
+                offset_z = self.z - z
+                
+            if self.vx >= 0:
+                offset_x = self.x - x
+            else:
+                offset_x = self.x - x
+                
+        # Z NEO
+        if landing_mode == 2:
+            if self.vz >= 0:
+                offset_z = self.prev_z - z
+            else:
+                offset_z = self.prev_z - z
+                
+            if self.vx >= 0:
+                offset_x = self.x - x
+            else:
+                offset_x = self.x - x
+                
+        if invert_x:
+            offset_x *= -1
+            
+        if invert_z:
+            offset_z *= -1
+            
+        total_offset = math.sqrt(offset_x ** 2 + offset_z ** 2)
+        if offset_x < 0 or offset_z < 0:
+            total_offset *= -1
+                    
+        return True, offset_x, offset_z, total_offset
+        
+    def set_movement(self, w: bool, a: bool, s: bool, d: bool, sprint: bool, space: bool):
         self.keys['W'] = w
         self.keys['A'] = a
         self.keys['S'] = s
@@ -316,6 +380,12 @@ class Player:
             self.strafe = fl(-1.0)
         else:
             self.strafe = fl(0.0)
+            
+        self.sprinting = sprint
+        self.keys['sprint'] = sprint
+        
+        self.jumping = space
+        self.keys['space'] = space
             
     def turn(self, mouse_delta):
         self.facing += mouse_delta
